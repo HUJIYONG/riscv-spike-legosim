@@ -548,7 +548,7 @@ reg_t syscall_t::sys_custom0(
     std::cout << "[Spike.SYS_CUSTOM0] Reading array from address 0x" << std::hex << p_data
               << " with " << std::dec << nbytes << " bytes" << std::endl;
     
-    std::vector<char> array_data(p_data);
+    std::vector<char> array_data(nbytes);
     memif->read(p_data, nbytes, array_data.data());
     
     // Print the array contents
