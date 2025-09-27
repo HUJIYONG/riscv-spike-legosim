@@ -71,6 +71,8 @@ class syscall_t : public device_t
   reg_t sys_getmainvars(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
   reg_t sys_chdir(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
   reg_t sys_readlinkat(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
+
+  reg_t sys_custom0(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
 };
 
 #endif

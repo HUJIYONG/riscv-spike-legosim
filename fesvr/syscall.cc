@@ -14,6 +14,8 @@
 #include <termios.h>
 #include <sstream>
 #include <iostream>
+#include "../riscv/sim.h"
+#include "../riscv/processor.h"
 using namespace std::placeholders;
 
 #define RISCV_AT_FDCWD -100
@@ -170,6 +172,8 @@ syscall_t::syscall_t(htif_t* htif)
   table[80] = &syscall_t::sys_fstat;
   table[93] = &syscall_t::sys_exit;
   table[291] = &syscall_t::sys_statx;
+  table[510] = &syscall_t::sys_custom0;
+
   table[1039] = &syscall_t::sys_lstat;
   table[2011] = &syscall_t::sys_getmainvars;
 
@@ -529,4 +533,50 @@ reg_t syscall_t::sys_readlinkat(reg_t dirfd, reg_t ppathname, reg_t ppathname_si
   if (ret > 0)
     memif->write(pbuf, ret, buf.data());
   return ret;
+}
+
+
+
+reg_t syscall_t::sys_custom0(
+  reg_t sleep_cycles, reg_t p_data, reg_t nbytes, reg_t a3, reg_t a4, reg_t a5, reg_t a6
+) {
+  // Try to cast htif to sim_t to access processor state
+  sim_t* sim = dynamic_cast<sim_t*>(htif);
+
+  // Read integer array from simulated memory if provided
+  if (p_data != 0 && nbytes > 0) {
+    std::cout << "[Spike.SYS_CUSTOM0] Reading array from address 0x" << std::hex << p_data
+              << " with " << std::dec << nbytes << " bytes" << std::endl;
+    
+    std::vector<char> array_data(p_data);
+    memif->read(p_data, nbytes, array_data.data());
+    
+    // Print the array contents
+    std::cout << "[Spike.SYS_CUSTOM0] Array bytes: ";
+    for (size_t i = 0; i < nbytes; i++) {
+      std::cout << (int)array_data[i] << " ";
+    }
+    std::cout << std::endl;
+  }
+  
+  if (sim) {
+    // Get the first processor (hart 0)
+    processor_t* proc = sim->get_core(0);
+    
+    if (proc && sleep_cycles > 0) {
+      // Get initial cycle count
+      reg_t start_cycle = proc->get_state()->mcycle->read();
+      
+      proc->get_state()->mcycle->bump(sleep_cycles);
+      
+      // Return the current cycle count after sleep
+      reg_t final_cycle = proc->get_state()->mcycle->read();
+      return final_cycle;
+    } else if (proc) {
+      // If sleep_cycles is 0 or negative, just return current cycle count
+      return proc->get_state()->mcycle->read();
+    }
+  }
+
+  return 0;
 }
