@@ -72,6 +72,14 @@ class syscall_t : public device_t
   reg_t sys_chdir(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
   reg_t sys_readlinkat(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
 
+  reg_t sys_launch(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
+  reg_t sys_waitlaunch(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
+  reg_t sys_barrier(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
+  reg_t sys_lock(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
+  reg_t sys_unlock(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
+  reg_t sys_remote_read(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
+  reg_t sys_remote_write(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
+
   reg_t sys_custom0(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
 };
 

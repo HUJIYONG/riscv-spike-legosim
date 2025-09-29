@@ -14,6 +14,7 @@
 #include <termios.h>
 #include <sstream>
 #include <iostream>
+#include <vector>
 #include "../riscv/sim.h"
 #include "../riscv/processor.h"
 using namespace std::placeholders;
@@ -172,6 +173,16 @@ syscall_t::syscall_t(htif_t* htif)
   table[80] = &syscall_t::sys_fstat;
   table[93] = &syscall_t::sys_exit;
   table[291] = &syscall_t::sys_statx;
+
+
+  table[501] = &syscall_t::sys_launch;
+  table[502] = &syscall_t::sys_waitlaunch;
+  table[503] = &syscall_t::sys_barrier;
+  table[504] = &syscall_t::sys_lock;
+  table[505] = &syscall_t::sys_unlock;
+  table[506] = &syscall_t::sys_remote_read;
+  table[507] = &syscall_t::sys_remote_write;
+
   table[510] = &syscall_t::sys_custom0;
 
   table[1039] = &syscall_t::sys_lstat;
@@ -577,6 +588,141 @@ reg_t syscall_t::sys_custom0(
       return proc->get_state()->mcycle->read();
     }
   }
+
+  return 0;
+}
+
+
+#include "/workspace/Chiplet_Heterogeneous_newVersion/interchiplet/includes/pipe_comm.h"
+
+
+InterChiplet::PipeComm global_pipe_comm;
+
+reg_t syscall_t::sys_barrier(
+  reg_t uid, reg_t srcX, reg_t srcY, reg_t count, reg_t a4, reg_t a5, reg_t a6
+) {
+  std::cout << "[Spike] Enter Spike barrier" << std::endl;
+
+  InterChiplet::barrierSync(srcX, srcY, uid, count);
+
+  sim_t* sim = dynamic_cast<sim_t*>(htif);
+  processor_t* proc = sim->get_core(0);
+  reg_t start_cycle = proc->get_state()->mcycle->read();
+  reg_t end_cycle = InterChiplet::writeSync(
+    start_cycle, srcX, srcY, uid, 0, 1, InterChiplet::SPD_BARRIER + count
+  );
+  proc->get_state()->mcycle->bump(end_cycle - start_cycle);
+
+  return 0;
+}
+
+reg_t syscall_t::sys_lock(
+  reg_t uid, reg_t srcX, reg_t srcY, reg_t a3, reg_t a4, reg_t a5, reg_t a6
+) {
+  std::cout << "[Spike] Enter Spike lock" << std::endl;
+
+  InterChiplet::lockSync(srcX, srcY, uid);
+
+  sim_t* sim = dynamic_cast<sim_t*>(htif);
+  processor_t* proc = sim->get_core(0);
+  reg_t start_cycle = proc->get_state()->mcycle->read();
+  reg_t end_cycle = InterChiplet::writeSync(
+    start_cycle, srcX, srcY, uid, 0, 1, InterChiplet::SPD_LOCK
+  );
+  proc->get_state()->mcycle->bump(end_cycle - start_cycle);
+
+
+  return 0;
+}
+
+reg_t syscall_t::sys_unlock(
+  reg_t uid, reg_t srcX, reg_t srcY, reg_t a3, reg_t a4, reg_t a5, reg_t a6
+) {
+  std::cout << "[Spike] Enter Spike unlock" << std::endl;
+
+  InterChiplet::unlockSync(srcX, srcY, uid);
+
+  sim_t* sim = dynamic_cast<sim_t*>(htif);
+  processor_t* proc = sim->get_core(0);
+  reg_t start_cycle = proc->get_state()->mcycle->read();
+  reg_t end_cycle =  InterChiplet::writeSync(
+    start_cycle, srcX, srcY, uid, 0, 1, InterChiplet::SPD_UNLOCK
+  );
+  proc->get_state()->mcycle->bump(end_cycle - start_cycle);
+
+  return 0;
+}
+
+reg_t syscall_t::sys_launch(
+  reg_t dstX, reg_t dstY, reg_t srcX, reg_t srcY, reg_t a4, reg_t a5, reg_t a6
+) {
+  std::cout << "[Spike] Enter Spike launch" << std::endl;
+
+  InterChiplet::launchSync(srcX, srcY, dstX, dstY);
+
+  sim_t* sim = dynamic_cast<sim_t*>(htif);
+  processor_t* proc = sim->get_core(0);
+  reg_t start_cycle = proc->get_state()->mcycle->read();
+  reg_t end_cycle = InterChiplet::writeSync(
+    start_cycle, srcX, srcY, dstX, dstY, 1, InterChiplet::SPD_LAUNCH
+  );
+  proc->get_state()->mcycle->bump(end_cycle - start_cycle);
+
+  return 0;
+}
+
+reg_t syscall_t::sys_waitlaunch(
+  reg_t dstX, reg_t dstY, reg_t p_srcX, reg_t p_srcY, reg_t a4, reg_t a5, reg_t a6
+) {
+  std::cout << "[Spike] Enter Spike waitlaunch" << std::endl;
+
+  InterChiplet::waitlaunchSync((int*)p_srcX, (int*)p_srcY, dstX, dstY);
+
+  sim_t* sim = dynamic_cast<sim_t*>(htif);
+  processor_t* proc = sim->get_core(0);
+  reg_t start_cycle = proc->get_state()->mcycle->read();
+  reg_t end_cycle = InterChiplet::readSync(
+    start_cycle, *(int*)p_srcX, *(int*)p_srcY, dstX, dstY, 1, InterChiplet::SPD_LAUNCH
+  ); 
+  proc->get_state()->mcycle->bump(end_cycle - start_cycle);
+
+  return 0;
+}
+
+reg_t syscall_t::sys_remote_write(
+  reg_t dstX, reg_t dstY, reg_t srcX, reg_t srcY, reg_t p_data, reg_t nbytes, reg_t a6
+) {
+  std::cout << "[Spike] Enter Spike remote_write" << std::endl;
+
+  std::vector<char> buf(nbytes);
+  memif->read(p_data, nbytes, buf.data());
+  std::string fileName = InterChiplet::sendSync(srcX, srcY, dstX, dstY);
+  global_pipe_comm.write_data(fileName.c_str(), buf.data(), nbytes);
+
+  sim_t* sim = dynamic_cast<sim_t*>(htif);
+  processor_t* proc = sim->get_core(0);
+  reg_t start_cycle = proc->get_state()->mcycle->read();
+  reg_t end_cycle = InterChiplet::writeSync(start_cycle, srcX, srcY, dstX, dstY, nbytes, 0);
+  proc->get_state()->mcycle->bump(end_cycle - start_cycle);
+
+  return 0;
+}
+
+reg_t syscall_t::sys_remote_read(
+  reg_t dstX, reg_t dstY, reg_t srcX, reg_t srcY, reg_t pdata, reg_t nbytes, reg_t a6
+) {
+  std::cout << "[Spike] Enter Spike remote_read" << std::endl;
+
+  std::vector<char> buf(nbytes);
+  std::string fileName = InterChiplet::receiveSync(srcX, srcY, dstX, dstY);
+  global_pipe_comm.read_data(fileName.c_str(), buf.data(), nbytes);
+  memif->write(pdata, nbytes, buf.data());
+
+  sim_t* sim = dynamic_cast<sim_t*>(htif);
+  processor_t* proc = sim->get_core(0);
+  reg_t start_cycle = proc->get_state()->mcycle->read();
+  reg_t end_cycle = InterChiplet::readSync(start_cycle, srcX, srcY, dstX, dstY, nbytes, 0);
+  proc->get_state()->mcycle->bump(end_cycle - start_cycle);
 
   return 0;
 }
