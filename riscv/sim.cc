@@ -266,8 +266,19 @@ sim_t::sim_t(const cfg_t *cfg, bool halted,
   }
 }
 
+
+
+#include "/workspace/Chiplet_Heterogeneous_newVersion/interchiplet/includes/pipe_comm.h"
+
 sim_t::~sim_t()
 {
+  // Print cycle information at simulation end
+  if (!procs.empty()) {
+    processor_t* proc0 = procs[0];
+    reg_t final_cycle = proc0->get_state()->mcycle->read();
+    InterChiplet::sendCycleCmd(final_cycle);
+  }
+  
   for (size_t i = 0; i < procs.size(); i++)
     delete procs[i];
   delete debug_mmu;
@@ -279,6 +290,13 @@ int sim_t::run()
     set_procs_debug(true);
 
   htif_t::set_expected_xlen(harts[0]->get_isa().get_max_xlen());
+
+  // Print cycle information at simulation start
+  if (!procs.empty()) {
+    processor_t* proc0 = procs[0];
+    reg_t initial_cycle = proc0->get_state()->mcycle->read();
+    InterChiplet::sendCycleCmd(initial_cycle);
+  }
 
   // htif_t::run() will repeatedly call back into sim_t::idle(), each
   // invocation of which will advance target time
