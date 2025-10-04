@@ -40,7 +40,8 @@ processor_t::processor_t(const char* isa_str, const char* priv_str,
   log_file(log_file), sout_(sout_.rdbuf()), halt_on_reset(halt_on_reset),
   in_wfi(false), check_triggers_icount(false),
   impl_table(256, false), extension_enable_table(isa.get_extension_table()),
-  last_pc(1), executions(1), TM(cfg->trigger_count)
+  last_pc(1), executions(1), TM(cfg->trigger_count),
+  max_pending_end_cycle(0)
 {
   VU.p = this;
   TM.proc = this;
@@ -822,5 +823,21 @@ void processor_t::trigger_updated(const std::vector<triggers::trigger_t *> &trig
     if (trigger->icount_check_needed()) {
       check_triggers_icount = true;
     }
+  }
+}
+
+// Async syscall support implementation
+void processor_t::sync_to_max_cycle()
+{
+  uint64_t current_cycle = state.mcycle->read();
+  if (max_pending_end_cycle > current_cycle) {
+    state.mcycle->bump(max_pending_end_cycle - current_cycle);
+  }
+}
+
+void processor_t::update_max_pending_end_cycle(uint64_t end_cycle)
+{
+  if (end_cycle > max_pending_end_cycle) {
+    max_pending_end_cycle = end_cycle;
   }
 }

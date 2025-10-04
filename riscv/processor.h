@@ -381,6 +381,11 @@ public:
 
   reg_t select_an_interrupt_with_default_priority(reg_t enabled_interrupts) const;
 
+  // Async syscall support
+  uint64_t max_pending_end_cycle;  // Track maximum pending end cycle for async operations
+  void sync_to_max_cycle();  // Sync processor cycles to max_pending_end_cycle
+  void update_max_pending_end_cycle(uint64_t end_cycle);  // Update max_pending_end_cycle
+
 private:
   const isa_parser_t isa;
   const cfg_t * const cfg;

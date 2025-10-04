@@ -182,6 +182,9 @@ syscall_t::syscall_t(htif_t* htif)
   table[505] = &syscall_t::sys_unlock;
   table[506] = &syscall_t::sys_remote_read;
   table[507] = &syscall_t::sys_remote_write;
+  table[508] = &syscall_t::sys_remote_read_async;
+  table[509] = &syscall_t::sys_remote_write_async;
+  table[511] = &syscall_t::sys_async_sync;
 
   table[510] = &syscall_t::sys_custom0;
 
@@ -603,10 +606,13 @@ reg_t syscall_t::sys_barrier(
 ) {
   std::cout << "[Spike] Enter Spike barrier" << std::endl;
 
-  InterChiplet::barrierSync(srcX, srcY, uid, count);
-
   sim_t* sim = dynamic_cast<sim_t*>(htif);
   processor_t* proc = sim->get_core(0);
+  
+  proc->sync_to_max_cycle();
+
+  InterChiplet::barrierSync(srcX, srcY, uid, count);
+
   reg_t start_cycle = proc->get_state()->mcycle->read();
   reg_t end_cycle = InterChiplet::writeSync(
     start_cycle, srcX, srcY, uid, 0, 1, InterChiplet::SPD_BARRIER + count
@@ -621,16 +627,18 @@ reg_t syscall_t::sys_lock(
 ) {
   std::cout << "[Spike] Enter Spike lock" << std::endl;
 
-  InterChiplet::lockSync(srcX, srcY, uid);
-
   sim_t* sim = dynamic_cast<sim_t*>(htif);
   processor_t* proc = sim->get_core(0);
+  
+  proc->sync_to_max_cycle();
+
+  InterChiplet::lockSync(srcX, srcY, uid);
+
   reg_t start_cycle = proc->get_state()->mcycle->read();
   reg_t end_cycle = InterChiplet::writeSync(
     start_cycle, srcX, srcY, uid, 0, 1, InterChiplet::SPD_LOCK
   );
   proc->get_state()->mcycle->bump(end_cycle - start_cycle);
-
 
   return 0;
 }
@@ -640,10 +648,13 @@ reg_t syscall_t::sys_unlock(
 ) {
   std::cout << "[Spike] Enter Spike unlock" << std::endl;
 
-  InterChiplet::unlockSync(srcX, srcY, uid);
-
   sim_t* sim = dynamic_cast<sim_t*>(htif);
   processor_t* proc = sim->get_core(0);
+  
+  proc->sync_to_max_cycle();
+
+  InterChiplet::unlockSync(srcX, srcY, uid);
+
   reg_t start_cycle = proc->get_state()->mcycle->read();
   reg_t end_cycle =  InterChiplet::writeSync(
     start_cycle, srcX, srcY, uid, 0, 1, InterChiplet::SPD_UNLOCK
@@ -658,10 +669,13 @@ reg_t syscall_t::sys_launch(
 ) {
   std::cout << "[Spike] Enter Spike launch" << std::endl;
 
-  InterChiplet::launchSync(srcX, srcY, dstX, dstY);
-
   sim_t* sim = dynamic_cast<sim_t*>(htif);
   processor_t* proc = sim->get_core(0);
+  
+  proc->sync_to_max_cycle();
+
+  InterChiplet::launchSync(srcX, srcY, dstX, dstY);
+
   reg_t start_cycle = proc->get_state()->mcycle->read();
   reg_t end_cycle = InterChiplet::writeSync(
     start_cycle, srcX, srcY, dstX, dstY, 1, InterChiplet::SPD_LAUNCH
@@ -676,14 +690,22 @@ reg_t syscall_t::sys_waitlaunch(
 ) {
   std::cout << "[Spike] Enter Spike waitlaunch" << std::endl;
 
-  InterChiplet::waitlaunchSync((int*)p_srcX, (int*)p_srcY, dstX, dstY);
-
   sim_t* sim = dynamic_cast<sim_t*>(htif);
   processor_t* proc = sim->get_core(0);
+  
+  proc->sync_to_max_cycle();
+
+  int host_srcX = 0, host_srcY = 0;
+  memif->read(p_srcX, sizeof(int), (void*)&host_srcX);
+  memif->read(p_srcY, sizeof(int), (void*)&host_srcY);
+  InterChiplet::waitlaunchSync(&host_srcX, &host_srcY, dstX, dstY);
+  memif->write(p_srcX, sizeof(int), (void*)&host_srcX);
+  memif->write(p_srcY, sizeof(int), (void*)&host_srcY);
+
   reg_t start_cycle = proc->get_state()->mcycle->read();
   reg_t end_cycle = InterChiplet::readSync(
-    start_cycle, *(int*)p_srcX, *(int*)p_srcY, dstX, dstY, 1, InterChiplet::SPD_LAUNCH
-  ); 
+    start_cycle, host_srcX, host_srcY, dstX, dstY, 1, InterChiplet::SPD_LAUNCH
+  );
   proc->get_state()->mcycle->bump(end_cycle - start_cycle);
 
   return 0;
@@ -694,13 +716,16 @@ reg_t syscall_t::sys_remote_write(
 ) {
   std::cout << "[Spike] Enter Spike remote_write" << std::endl;
 
+  sim_t* sim = dynamic_cast<sim_t*>(htif);
+  processor_t* proc = sim->get_core(0);
+  
+  proc->sync_to_max_cycle();
+
   std::vector<char> buf(nbytes);
   memif->read(p_data, nbytes, buf.data());
   std::string fileName = InterChiplet::sendSync(srcX, srcY, dstX, dstY);
   global_pipe_comm.write_data(fileName.c_str(), buf.data(), nbytes);
 
-  sim_t* sim = dynamic_cast<sim_t*>(htif);
-  processor_t* proc = sim->get_core(0);
   reg_t start_cycle = proc->get_state()->mcycle->read();
   reg_t end_cycle = InterChiplet::writeSync(start_cycle, srcX, srcY, dstX, dstY, nbytes, 0);
   proc->get_state()->mcycle->bump(end_cycle - start_cycle);
@@ -713,6 +738,48 @@ reg_t syscall_t::sys_remote_read(
 ) {
   std::cout << "[Spike] Enter Spike remote_read" << std::endl;
 
+  sim_t* sim = dynamic_cast<sim_t*>(htif);
+  processor_t* proc = sim->get_core(0);
+  
+  proc->sync_to_max_cycle();
+
+  std::vector<char> buf(nbytes);
+  std::string fileName = InterChiplet::receiveSync(srcX, srcY, dstX, dstY);
+  global_pipe_comm.read_data(fileName.c_str(), buf.data(), nbytes);
+  memif->write(pdata, nbytes, buf.data());
+
+  reg_t start_cycle = proc->get_state()->mcycle->read();
+  reg_t end_cycle = InterChiplet::readSync(start_cycle, srcX, srcY, dstX, dstY, nbytes, 0);
+  proc->get_state()->mcycle->bump(end_cycle - start_cycle);
+
+  return 0;
+}
+
+reg_t syscall_t::sys_remote_write_async(
+  reg_t dstX, reg_t dstY, reg_t srcX, reg_t srcY, reg_t p_data, reg_t nbytes, reg_t a6
+) {
+  std::cout << "[Spike] Enter Spike remote_write_async" << std::endl;
+
+  std::vector<char> buf(nbytes);
+  memif->read(p_data, nbytes, buf.data());
+  std::string fileName = InterChiplet::sendSync(srcX, srcY, dstX, dstY);
+  global_pipe_comm.write_data(fileName.c_str(), buf.data(), nbytes);
+
+  sim_t* sim = dynamic_cast<sim_t*>(htif);
+  processor_t* proc = sim->get_core(0);
+  reg_t start_cycle = proc->get_state()->mcycle->read();
+  reg_t end_cycle = InterChiplet::writeSync(start_cycle, srcX, srcY, dstX, dstY, nbytes, 0);
+  
+  proc->update_max_pending_end_cycle(end_cycle);
+  
+  return 0;
+}
+
+reg_t syscall_t::sys_remote_read_async(
+  reg_t dstX, reg_t dstY, reg_t srcX, reg_t srcY, reg_t pdata, reg_t nbytes, reg_t a6
+) {
+  std::cout << "[Spike] Enter Spike remote_read_async" << std::endl;
+
   std::vector<char> buf(nbytes);
   std::string fileName = InterChiplet::receiveSync(srcX, srcY, dstX, dstY);
   global_pipe_comm.read_data(fileName.c_str(), buf.data(), nbytes);
@@ -722,7 +789,21 @@ reg_t syscall_t::sys_remote_read(
   processor_t* proc = sim->get_core(0);
   reg_t start_cycle = proc->get_state()->mcycle->read();
   reg_t end_cycle = InterChiplet::readSync(start_cycle, srcX, srcY, dstX, dstY, nbytes, 0);
-  proc->get_state()->mcycle->bump(end_cycle - start_cycle);
+  
+  proc->update_max_pending_end_cycle(end_cycle);
+  
+  return 0;
+}
 
+reg_t syscall_t::sys_async_sync(
+  reg_t a0, reg_t a1, reg_t a2, reg_t a3, reg_t a4, reg_t a5, reg_t a6
+) {
+  std::cout << "[Spike] Enter Spike async_sync" << std::endl;
+
+  sim_t* sim = dynamic_cast<sim_t*>(htif);
+  processor_t* proc = sim->get_core(0);
+  
+  proc->sync_to_max_cycle();
+  
   return 0;
 }

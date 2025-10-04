@@ -79,6 +79,9 @@ class syscall_t : public device_t
   reg_t sys_unlock(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
   reg_t sys_remote_read(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
   reg_t sys_remote_write(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
+  reg_t sys_remote_read_async(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
+  reg_t sys_remote_write_async(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
+  reg_t sys_async_sync(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
 
   reg_t sys_custom0(reg_t, reg_t, reg_t, reg_t, reg_t, reg_t, reg_t);
 };
